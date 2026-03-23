@@ -28,7 +28,7 @@ async function createWindow(): Promise<void> {
     closable: true,
     title: 'Game Time Control',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false
@@ -66,3 +66,4 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+
