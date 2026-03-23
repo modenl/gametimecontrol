@@ -32,10 +32,16 @@ Electron + React + TypeScript Windows kiosk app for controlling a child's weekly
 
 ## One-line install
 
-Example hosted install command once you have a real release URL:
+Fastest install from GitHub Releases:
 
 ```cmd
-cmd /c "set GTC_RELEASE_URL=https://your-host/releases/GameTimeControlSetup.exe && call scripts\install-latest.cmd"
+curl -L https://github.com/modenl/gametimecontrol/releases/latest/download/GameTimeControlSetup.exe -o "%TEMP%\GameTimeControlSetup.exe" && "%TEMP%\GameTimeControlSetup.exe" /S
+```
+
+Or use the included helper script:
+
+```cmd
+cmd /c "call scripts\install-latest.cmd"
 ```
 
 ## Windows shell/startup configuration

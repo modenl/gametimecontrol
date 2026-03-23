@@ -19,7 +19,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@rollup/rollup-win32-x64-msvc": "^4.60.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.40.0",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
@@ -33,6 +33,7 @@
   "build": {
     "appId": "com.gametimecontrol.app",
     "productName": "Game Time Control",
+    "artifactName": "GameTimeControlSetup.${ext}",
     "directories": {
       "output": "release"
     },

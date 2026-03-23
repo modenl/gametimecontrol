@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set "DOWNLOAD_URL=%GTC_RELEASE_URL%"
-if "%DOWNLOAD_URL%"=="" set "DOWNLOAD_URL=https://example.com/releases/latest/download/GameTimeControlSetup.exe"
+if "%DOWNLOAD_URL%"=="" set "DOWNLOAD_URL=https://github.com/modenl/gametimecontrol/releases/latest/download/GameTimeControlSetup.exe"
 set "INSTALLER=%TEMP%\GameTimeControlSetup.exe"
 
 echo Downloading Game Time Control from %DOWNLOAD_URL%
@@ -16,3 +16,4 @@ if errorlevel 1 exit /b 1
 echo Installed. Optional shell/startup configuration can be applied with:
 echo powershell -ExecutionPolicy Bypass -File "%~dp0configure-shell.ps1" -ChildUserName child -EnableStartup -EnableShellReplacement
 endlocal
+
