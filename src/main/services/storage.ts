@@ -33,17 +33,11 @@ export function verifyPasswordHash(password: string, storedHash: string): boolea
 
 export class StorageService {
   private readonly dataDir: string;
-
   private readonly configPath: string;
-
   private readonly statePath: string;
-
   private readonly usagePath: string;
-
   private config!: PolicyConfig;
-
   private state!: PersistedState;
-
   private usage!: UsageLedger;
 
   constructor(baseDir: string) {
@@ -55,9 +49,11 @@ export class StorageService {
 
   async initialize(): Promise<void> {
     await fs.mkdir(this.dataDir, { recursive: true });
-    this.config = await this.readOrCreate(this.configPath, this.createDefaultConfig());
+    const defaultConfig = this.createDefaultConfig();
+    this.config = this.normalizeConfig(await this.readOrCreate(this.configPath, defaultConfig));
     this.state = await this.readOrCreate(this.statePath, this.createDefaultState());
     this.usage = await this.readOrCreate(this.usagePath, this.createDefaultUsage());
+    await this.atomicWrite(this.configPath, this.config);
   }
 
   getConfig(): PolicyConfig {
@@ -78,7 +74,7 @@ export class StorageService {
   }
 
   async saveConfig(next: PolicyConfig): Promise<void> {
-    this.config = structuredClone(next);
+    this.config = this.normalizeConfig(next);
     await this.atomicWrite(this.configPath, this.config);
   }
 
@@ -105,6 +101,41 @@ export class StorageService {
     return verifyPasswordHash(password, this.config.adminPasswordHash);
   }
 
+  private normalizeConfig(raw: unknown): PolicyConfig {
+    const config = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    const legacyInstall =
+      config.install && typeof config.install === 'object'
+        ? (config.install as Record<string, unknown>)
+        : {};
+
+    return {
+      adminPasswordHash:
+        typeof config.adminPasswordHash === 'string' && config.adminPasswordHash
+          ? config.adminPasswordHash
+          : createPasswordHash('qwert'),
+      weeklyQuotaSeconds:
+        typeof config.weeklyQuotaSeconds === 'number'
+          ? config.weeklyQuotaSeconds
+          : WEEKLY_QUOTA_SECONDS,
+      sessionMaxSeconds:
+        typeof config.sessionMaxSeconds === 'number'
+          ? config.sessionMaxSeconds
+          : SESSION_MAX_SECONDS,
+      minGapSeconds:
+        typeof config.minGapSeconds === 'number' ? config.minGapSeconds : MIN_GAP_SECONDS,
+      childProfile: {
+        displayName:
+          config.childProfile &&
+          typeof config.childProfile === 'object' &&
+          typeof (config.childProfile as Record<string, unknown>).displayName === 'string'
+            ? ((config.childProfile as Record<string, unknown>).displayName as string)
+            : typeof legacyInstall.childAccountName === 'string'
+              ? legacyInstall.childAccountName
+              : 'Child'
+      }
+    };
+  }
+
   private async readOrCreate<T>(filePath: string, fallback: T): Promise<T> {
     try {
       const raw = await fs.readFile(filePath, 'utf8');
@@ -128,11 +159,8 @@ export class StorageService {
       weeklyQuotaSeconds: WEEKLY_QUOTA_SECONDS,
       sessionMaxSeconds: SESSION_MAX_SECONDS,
       minGapSeconds: MIN_GAP_SECONDS,
-      managedGames: [],
-      install: {
-        childAccountName: '',
-        shellReplacementEnabled: false,
-        startupRegistered: false
+      childProfile: {
+        displayName: 'Child'
       }
     };
   }

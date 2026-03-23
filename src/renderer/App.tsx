@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import type { PolicyUpdateInput, RendererSnapshot, PasswordUpdateInput } from '../main/types';
+import { useEffect, useState } from 'react';
+import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../main/types';
 import { AdminPanel } from './components/AdminPanel';
 import { ChildSurface } from './components/ChildSurface';
 
@@ -24,13 +23,12 @@ export function App() {
     };
   }, []);
 
-  const countdownSeconds = useMemo(() => {
-    const active = snapshot?.state.activeSession;
-    if (!active) {
-      return null;
-    }
-    return active.remainingSeconds <= 60 ? active.remainingSeconds : null;
-  }, [snapshot]);
+  function closeAdminPanel() {
+    setAdminOpen(false);
+    setAdminAuthenticated(false);
+    setPassword('');
+    setAuthError('');
+  }
 
   async function handleAdminLogin() {
     setAuthError('');
@@ -64,8 +62,8 @@ export function App() {
     await wrapAction('Updating password...', () => window.gametime.updatePassword(input));
   }
 
-  async function handleLaunch(gameId: string) {
-    await wrapAction('Launching game...', () => window.gametime.launchGame(gameId));
+  async function handleStartSession() {
+    await wrapAction('Starting session and unlocking the desktop...', () => window.gametime.startSession());
   }
 
   async function handleStopSession() {
@@ -89,22 +87,8 @@ export function App() {
         busyMessage={busyMessage}
         actionError={actionError}
         onOpenAdmin={() => setAdminOpen(true)}
-        onLaunch={handleLaunch}
+        onStartSession={handleStartSession}
       />
-
-      <AnimatePresence>
-        {countdownSeconds !== null ? (
-          <motion.div
-            className="countdown-overlay"
-            initial={{ opacity: 0, y: -18, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -18, scale: 0.95 }}
-          >
-            <span className="countdown-label">Session ending</span>
-            <strong>{countdownSeconds}s</strong>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
 
       <div className="admin-gate">
         {!adminAuthenticated ? (
@@ -140,7 +124,7 @@ export function App() {
         open={adminOpen && adminAuthenticated}
         busyMessage={busyMessage}
         actionError={actionError}
-        onClose={() => setAdminOpen(false)}
+        onClose={closeAdminPanel}
         onSavePolicy={handlePolicySave}
         onSavePassword={handlePasswordSave}
         onStopSession={handleStopSession}
@@ -149,4 +133,3 @@ export function App() {
     </div>
   );
 }
-

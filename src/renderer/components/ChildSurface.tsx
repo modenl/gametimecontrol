@@ -6,7 +6,7 @@ interface ChildSurfaceProps {
   busyMessage: string;
   actionError: string;
   onOpenAdmin: () => void;
-  onLaunch: (gameId: string) => Promise<void>;
+  onStartSession: () => Promise<void>;
 }
 
 function formatMinutes(seconds: number): string {
@@ -25,8 +25,8 @@ function formatClock(iso: string | null): string {
 
 function describeAccess(snapshot: RendererSnapshot): string {
   const { availability, state } = snapshot;
-  if (state.activeSession?.status === 'awaiting-resume') {
-    return 'A previous session is still running against the clock. Resume the same game to use the remaining time.';
+  if (state.activeSession) {
+    return 'Session is active. The app has moved into the background so games can be opened normally.';
   }
   if (availability.reason === 'cooldown') {
     return `Next session unlocks at ${formatClock(availability.nextAllowedAt)}.`;
@@ -34,10 +34,7 @@ function describeAccess(snapshot: RendererSnapshot): string {
   if (availability.reason === 'quota') {
     return 'This week\'s time is fully used. New time unlocks next Monday.';
   }
-  if (state.activeSession?.status === 'running') {
-    return 'A game session is active. The timer will end it automatically.';
-  }
-  return 'Select one approved game to start a session.';
+  return 'Press start session, then open any game you want while the timer is running.';
 }
 
 export function ChildSurface({
@@ -45,10 +42,10 @@ export function ChildSurface({
   busyMessage,
   actionError,
   onOpenAdmin,
-  onLaunch
+  onStartSession
 }: ChildSurfaceProps) {
   const activeSession = snapshot.state.activeSession;
-  const isAwaitingResume = activeSession?.status === 'awaiting-resume';
+  const canStart = snapshot.availability.reason === 'ok' && snapshot.availability.canStart;
 
   return (
     <main className="child-surface">
@@ -62,15 +59,15 @@ export function ChildSurface({
           <button type="button" className="ghost-button" onClick={onOpenAdmin}>
             Family control
           </button>
-          <span className="brand-kicker">Windows kiosk</span>
+          <span className="brand-kicker">Child profile: {snapshot.config.childProfile.displayName || 'Child'}</span>
         </div>
 
         <div className="hero-copy">
           <p className="eyebrow">Game Time Control</p>
           <h1>
-            One calm screen.
+            Start a session.
             <br />
-            Clear limits.
+            Play normally.
           </h1>
           <p className="hero-note">{describeAccess(snapshot)}</p>
         </div>
@@ -86,7 +83,7 @@ export function ChildSurface({
           </div>
           <div>
             <span>Cooldown</span>
-            <strong>{snapshot.state.cooldownUntil ? formatClock(snapshot.state.cooldownUntil) : 'Ready'}</strong>
+            <strong>{snapshot.availability.reason === 'cooldown' && snapshot.availability.nextAllowedAt ? formatClock(snapshot.availability.nextAllowedAt) : 'Ready'}</strong>
           </div>
         </div>
       </motion.section>
@@ -99,43 +96,25 @@ export function ChildSurface({
       >
         <header className="section-header">
           <div>
-            <p className="eyebrow">Approved games</p>
-            <h2>Launch library</h2>
+            <p className="eyebrow">Session control</p>
+            <h2>One button</h2>
           </div>
           {busyMessage ? <span className="status-chip">{busyMessage}</span> : null}
         </header>
 
-        <div className="game-list">
-          {snapshot.config.managedGames.length === 0 ? (
-            <p className="empty-copy">No games configured yet. Ask an adult to set up the library.</p>
-          ) : null}
-          {snapshot.config.managedGames.map((game) => {
-            const canLaunch =
-              game.enabled &&
-              ((snapshot.availability.reason === 'ok' && snapshot.availability.canStart) ||
-                (isAwaitingResume && activeSession?.appId === game.id));
-            return (
-              <article className="game-row" key={game.id}>
-                <div>
-                  <p>{game.name}</p>
-                  <span>{game.exePath}</span>
-                </div>
-                <button
-                  type="button"
-                  disabled={!canLaunch}
-                  onClick={() => void onLaunch(game.id)}
-                >
-                  {isAwaitingResume && activeSession?.appId === game.id ? 'Resume session' : 'Start game'}
-                </button>
-              </article>
-            );
-          })}
+        <div className="session-action-block">
+          <p className="empty-copy">
+            When a session starts, this app drops to the background and stops blocking app switching. When time runs out, it comes back to the front and locks the screen again.
+          </p>
+          <button type="button" disabled={!canStart} className="primary-session-button" onClick={() => void onStartSession()}>
+            Start session
+          </button>
         </div>
 
         {activeSession ? (
           <div className="session-ribbon">
             <span>Current session</span>
-            <strong>{activeSession.appName}</strong>
+            <strong>Free play window</strong>
             <em>{formatMinutes(activeSession.remainingSeconds)} remaining</em>
           </div>
         ) : null}

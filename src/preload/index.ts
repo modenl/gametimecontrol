@@ -1,16 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type {
-  PasswordUpdateInput,
-  PolicyUpdateInput,
-  RendererSnapshot
-} from '../main/types';
+import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../main/types';
 
 export interface GameTimeControlApi {
   load(): Promise<RendererSnapshot>;
   login(password: string): Promise<boolean>;
   updatePassword(input: PasswordUpdateInput): Promise<void>;
   updatePolicy(input: PolicyUpdateInput): Promise<void>;
-  launchGame(gameId: string): Promise<void>;
+  startSession(): Promise<void>;
   stopSession(): Promise<void>;
   unlockDesktop(): Promise<void>;
   subscribe(listener: (snapshot: RendererSnapshot) => void): () => void;
@@ -21,7 +17,7 @@ const api: GameTimeControlApi = {
   login: (password) => ipcRenderer.invoke('auth:login', password),
   updatePassword: (input) => ipcRenderer.invoke('auth:updatePassword', input),
   updatePolicy: (input) => ipcRenderer.invoke('policy:update', input),
-  launchGame: (gameId) => ipcRenderer.invoke('session:launch', gameId),
+  startSession: () => ipcRenderer.invoke('session:start'),
   stopSession: () => ipcRenderer.invoke('session:stop'),
   unlockDesktop: () => ipcRenderer.invoke('admin:unlockDesktop'),
   subscribe: (listener) => {

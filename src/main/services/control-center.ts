@@ -1,20 +1,14 @@
 import { app } from 'electron';
 import { EventEmitter } from 'node:events';
-import type {
-  PasswordUpdateInput,
-  PolicyUpdateInput,
-  RendererSnapshot
-} from '../types';
+import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../types';
 import { LauncherService } from './launcher-service';
 import { SessionService } from './session-service';
 import { StorageService } from './storage';
 
 export class ControlCenter extends EventEmitter {
   readonly storage = new StorageService(app.getPath('userData'));
-
   readonly launcher = new LauncherService();
-
-  readonly session = new SessionService(this.storage, this.launcher);
+  readonly session = new SessionService(this.storage);
 
   async initialize(): Promise<void> {
     this.session.on('changed', () => this.emit('changed', this.getSnapshot()));
@@ -53,25 +47,18 @@ export class ControlCenter extends EventEmitter {
       ...current,
       weeklyQuotaSeconds: Math.max(600, Math.round(input.weeklyQuotaMinutes * 60)),
       sessionMaxSeconds: Math.max(60, Math.round(input.sessionMaxMinutes * 60)),
-      minGapSeconds: Math.max(300, Math.round(input.minGapHours * 3600)),
-      managedGames: input.managedGames.map((game) => ({
-        ...game,
-        launchArgs: game.launchArgs ?? []
-      })),
-      install: input.install
+      minGapSeconds: Math.max(0, Math.round(input.minGapHours * 3600)),
+      childProfile: {
+        displayName: input.childProfile.displayName.trim() || 'Child'
+      }
     };
+
     await this.storage.saveConfig(next);
-    this.emit('changed', this.getSnapshot());
+    await this.session.syncDerivedState();
   }
 
-  async launchGame(gameId: string): Promise<void> {
-    const game = this.storage
-      .getConfig()
-      .managedGames.find((item) => item.id === gameId && item.enabled);
-    if (!game) {
-      throw new Error('Game is not available.');
-    }
-    await this.session.startOrResume(game);
+  async startSession(): Promise<void> {
+    await this.session.startSession();
     this.emit('changed', this.getSnapshot());
   }
 

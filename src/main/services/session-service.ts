@@ -1,30 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { ChildProcess } from 'node:child_process';
 import type {
   ActiveSession,
   Availability,
-  ManagedGame,
   PersistedState,
   SessionExitReason,
   UsageLedger,
   UsageRecord
 } from '../types';
 import { clamp, getWeekStartLocal, secondsBetween } from './time';
-import { LauncherService } from './launcher-service';
 import { StorageService } from './storage';
 
 export class SessionService extends EventEmitter {
-  private activeProcess: ChildProcess | null = null;
-
   private tickHandle: NodeJS.Timeout | null = null;
-
   private finalizingSessionId: string | null = null;
 
-  constructor(
-    private readonly storage: StorageService,
-    private readonly launcher: LauncherService
-  ) {
+  constructor(private readonly storage: StorageService) {
     super();
   }
 
@@ -47,11 +38,15 @@ export class SessionService extends EventEmitter {
     state.activeSession = {
       ...state.activeSession,
       remainingSeconds: remaining,
-      status: 'awaiting-resume',
-      pid: undefined
+      status: 'running'
     };
     await this.storage.saveState(state);
+    this.startTicker();
     this.emitChanged();
+  }
+
+  hasActiveSession(): boolean {
+    return Boolean(this.storage.getState().activeSession);
   }
 
   getAvailability(): Availability {
@@ -70,7 +65,11 @@ export class SessionService extends EventEmitter {
       };
     }
 
-    if (state.cooldownUntil && new Date(state.cooldownUntil).getTime() > Date.now()) {
+    if (
+      config.minGapSeconds > 0 &&
+      state.cooldownUntil &&
+      new Date(state.cooldownUntil).getTime() > Date.now()
+    ) {
       return {
         canStart: false,
         reason: 'cooldown',
@@ -99,38 +98,27 @@ export class SessionService extends EventEmitter {
     };
   }
 
-  async startOrResume(game: ManagedGame): Promise<void> {
+  async startSession(): Promise<void> {
     await this.normalizeUsageWindow();
     await this.normalizeCooldown();
 
     const state = this.storage.getState();
     if (state.activeSession) {
-      if (state.activeSession.appId !== game.id) {
-        throw new Error('A different session is already active.');
-      }
-      await this.resumeExistingSession(game, state.activeSession);
-      return;
+      throw new Error('A session is already active.');
     }
 
     const availability = this.getAvailability();
     if (!availability.canStart || availability.launchBudgetSeconds <= 0) {
-      throw new Error('Game launch is not available right now.');
+      throw new Error('A new session is not available right now.');
     }
 
-    const process = await this.launcher.launch(game);
     const now = new Date();
     const session: ActiveSession = {
       id: randomUUID(),
-      appId: game.id,
-      appName: game.name,
-      exePath: game.exePath,
-      launchArgs: [...game.launchArgs],
-      workingDir: game.workingDir,
       startedAt: now.toISOString(),
       plannedEndAt: new Date(now.getTime() + availability.launchBudgetSeconds * 1000).toISOString(),
       remainingSeconds: availability.launchBudgetSeconds,
-      status: 'running',
-      pid: process.pid
+      status: 'running'
     };
 
     await this.storage.saveState({
@@ -139,61 +127,23 @@ export class SessionService extends EventEmitter {
       desktopUnlocked: false
     });
 
-    this.attachProcess(process, session.id);
     this.startTicker();
     this.emitChanged();
   }
 
   async stopByAdmin(): Promise<void> {
-    const state = this.storage.getState();
-    const session = state.activeSession;
+    const session = this.storage.getState().activeSession;
     if (!session) {
       return;
     }
 
-    if (typeof session.pid === 'number') {
-      await this.launcher.killProcessTree(session.pid).catch(() => undefined);
-    }
     await this.finalize(session, 'admin-stop', new Date());
   }
 
-  async finalizeIfProcessExited(): Promise<void> {
-    const state = this.storage.getState();
-    if (!state.activeSession) {
-      return;
-    }
-    await this.finalize(state.activeSession, 'manual', new Date());
-  }
-
-  private async resumeExistingSession(game: ManagedGame, session: ActiveSession): Promise<void> {
-    const remainingSeconds = this.calculateRemainingSeconds(session);
-    if (remainingSeconds <= 0) {
-      await this.finalizeRecoveredTimeout(session);
-      return;
-    }
-
-    const process = await this.launcher.launch(game);
-    const nextState = this.storage.getState();
-    nextState.activeSession = {
-      ...session,
-      status: 'running',
-      remainingSeconds,
-      pid: process.pid
-    };
-    await this.storage.saveState(nextState);
-    this.attachProcess(process, session.id);
-    this.startTicker();
+  async syncDerivedState(): Promise<void> {
+    await this.normalizeUsageWindow();
+    await this.normalizeCooldown();
     this.emitChanged();
-  }
-
-  private attachProcess(process: ChildProcess, sessionId: string): void {
-    this.activeProcess = process;
-    process.once('exit', () => {
-      if (this.finalizingSessionId === sessionId) {
-        return;
-      }
-      void this.finalizeIfProcessExited();
-    });
   }
 
   private startTicker(): void {
@@ -220,10 +170,6 @@ export class SessionService extends EventEmitter {
 
     const remainingSeconds = this.calculateRemainingSeconds(session);
     if (remainingSeconds <= 0) {
-      if (typeof session.pid === 'number') {
-        this.finalizingSessionId = session.id;
-        await this.launcher.killProcessTree(session.pid).catch(() => undefined);
-      }
       await this.finalize(session, 'timeout', new Date(session.plannedEndAt));
       return;
     }
@@ -246,19 +192,13 @@ export class SessionService extends EventEmitter {
     await this.finalize(session, 'expired-while-offline', new Date(session.plannedEndAt));
   }
 
-  private async finalize(
-    session: ActiveSession,
-    reason: SessionExitReason,
-    endedAt: Date
-  ): Promise<void> {
-    if (this.finalizingSessionId === session.id && reason === 'manual') {
+  private async finalize(session: ActiveSession, reason: SessionExitReason, endedAt: Date): Promise<void> {
+    if (this.finalizingSessionId === session.id) {
       return;
     }
 
     this.finalizingSessionId = session.id;
     this.stopTicker();
-    this.activeProcess = null;
-
     await this.normalizeUsageWindow();
 
     const config = this.storage.getConfig();
@@ -272,8 +212,6 @@ export class SessionService extends EventEmitter {
 
     const record: UsageRecord = {
       id: session.id,
-      appId: session.appId,
-      appName: session.appName,
       startedAt: session.startedAt,
       endedAt: endedAt.toISOString(),
       usedSeconds: actualSeconds,
@@ -289,7 +227,10 @@ export class SessionService extends EventEmitter {
       ...state,
       activeSession: null,
       lastSessionEndedAt: endedAt.toISOString(),
-      cooldownUntil: new Date(endedAt.getTime() + config.minGapSeconds * 1000).toISOString()
+      cooldownUntil:
+        config.minGapSeconds > 0
+          ? new Date(endedAt.getTime() + config.minGapSeconds * 1000).toISOString()
+          : null
     };
 
     await this.storage.saveUsage(nextUsage);
@@ -313,11 +254,12 @@ export class SessionService extends EventEmitter {
   }
 
   private async normalizeCooldown(): Promise<void> {
+    const config = this.storage.getConfig();
     const state = this.storage.getState();
     if (!state.cooldownUntil) {
       return;
     }
-    if (new Date(state.cooldownUntil).getTime() > Date.now()) {
+    if (config.minGapSeconds > 0 && new Date(state.cooldownUntil).getTime() > Date.now()) {
       return;
     }
 
@@ -331,4 +273,3 @@ export class SessionService extends EventEmitter {
     this.emit('changed');
   }
 }
-

@@ -1,17 +1,5 @@
-export interface ManagedGame {
-  id: string;
-  name: string;
-  exePath: string;
-  launchArgs: string[];
-  workingDir?: string;
-  iconPath?: string;
-  enabled: boolean;
-}
-
-export interface InstallSettings {
-  childAccountName: string;
-  shellReplacementEnabled: boolean;
-  startupRegistered: boolean;
+export interface ChildProfileSettings {
+  displayName: string;
 }
 
 export interface PolicyConfig {
@@ -19,31 +7,19 @@ export interface PolicyConfig {
   weeklyQuotaSeconds: number;
   sessionMaxSeconds: number;
   minGapSeconds: number;
-  managedGames: ManagedGame[];
-  install: InstallSettings;
+  childProfile: ChildProfileSettings;
 }
 
-export type SessionExitReason =
-  | 'natural'
-  | 'timeout'
-  | 'manual'
-  | 'admin-stop'
-  | 'expired-while-offline';
+export type SessionExitReason = 'timeout' | 'admin-stop' | 'expired-while-offline';
 
-export type SessionStatus = 'running' | 'awaiting-resume';
+export type SessionStatus = 'running';
 
 export interface ActiveSession {
   id: string;
-  appId: string;
-  appName: string;
-  exePath: string;
-  launchArgs: string[];
-  workingDir?: string;
   startedAt: string;
   plannedEndAt: string;
   remainingSeconds: number;
   status: SessionStatus;
-  pid?: number;
 }
 
 export interface PersistedState {
@@ -55,8 +31,6 @@ export interface PersistedState {
 
 export interface UsageRecord {
   id: string;
-  appId: string;
-  appName: string;
   startedAt: string;
   endedAt: string;
   usedSeconds: number;
@@ -73,8 +47,7 @@ export interface RendererConfig {
   weeklyQuotaSeconds: number;
   sessionMaxSeconds: number;
   minGapSeconds: number;
-  managedGames: ManagedGame[];
-  install: InstallSettings;
+  childProfile: ChildProfileSettings;
 }
 
 export interface Availability {
@@ -97,8 +70,7 @@ export interface PolicyUpdateInput {
   weeklyQuotaMinutes: number;
   sessionMaxMinutes: number;
   minGapHours: number;
-  managedGames: ManagedGame[];
-  install: InstallSettings;
+  childProfile: ChildProfileSettings;
 }
 
 export interface PasswordUpdateInput {

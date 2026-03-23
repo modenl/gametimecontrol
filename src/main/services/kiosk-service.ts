@@ -11,15 +11,19 @@ const BLOCKED_SHORTCUTS = [
 
 export class KioskService {
   private blockerId: number | null = null;
+  private locked = true;
+  private boundWindow: BrowserWindow | null = null;
 
   bindWindow(window: BrowserWindow): void {
+    this.boundWindow = window;
     this.ensurePowerBlocker();
     window.setMenuBarVisibility(false);
-    window.setAlwaysOnTop(true, 'screen-saver');
-    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    window.setKiosk(true);
+    this.lockWindow();
 
     window.on('blur', () => {
+      if (!this.locked) {
+        return;
+      }
       setTimeout(() => {
         if (!window.isDestroyed()) {
           window.show();
@@ -29,22 +33,69 @@ export class KioskService {
     });
 
     window.on('leave-full-screen', () => {
-      if (!window.isDestroyed()) {
+      if (this.locked && !window.isDestroyed()) {
         window.setKiosk(true);
       }
     });
+  }
 
-    for (const shortcut of BLOCKED_SHORTCUTS) {
-      globalShortcut.register(shortcut, () => undefined);
+  lockWindow(): void {
+    const window = this.boundWindow;
+    if (!window || window.isDestroyed()) {
+      return;
     }
+
+    if (this.locked) {
+      window.setAlwaysOnTop(true, 'screen-saver');
+      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      return;
+    }
+
+    this.locked = true;
+    window.setAlwaysOnTop(true, 'screen-saver');
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    window.setKiosk(true);
+    window.show();
+    window.focus();
+    this.registerShortcuts();
+  }
+
+  releaseForSession(): void {
+    const window = this.boundWindow;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    if (!this.locked) {
+      return;
+    }
+
+    this.locked = false;
+    this.unregisterShortcuts();
+    window.setKiosk(false);
+    window.setAlwaysOnTop(false);
+    window.setVisibleOnAllWorkspaces(false);
+    window.minimize();
   }
 
   dispose(): void {
-    globalShortcut.unregisterAll();
+    this.unregisterShortcuts();
     if (this.blockerId !== null && powerSaveBlocker.isStarted(this.blockerId)) {
       powerSaveBlocker.stop(this.blockerId);
       this.blockerId = null;
     }
+  }
+
+  private registerShortcuts(): void {
+    for (const shortcut of BLOCKED_SHORTCUTS) {
+      if (!globalShortcut.isRegistered(shortcut)) {
+        globalShortcut.register(shortcut, () => undefined);
+      }
+    }
+  }
+
+  private unregisterShortcuts(): void {
+    globalShortcut.unregisterAll();
   }
 
   private ensurePowerBlocker(): void {
@@ -54,3 +105,4 @@ export class KioskService {
     this.blockerId = powerSaveBlocker.start('prevent-display-sleep');
   }
 }
+

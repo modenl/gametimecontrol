@@ -9,7 +9,7 @@ export function registerIpc(control: ControlCenter, window: BrowserWindow): void
     control.updatePassword(input)
   );
   ipcMain.handle('policy:update', (_event, input: PolicyUpdateInput) => control.updatePolicy(input));
-  ipcMain.handle('session:launch', (_event, gameId: string) => control.launchGame(gameId));
+  ipcMain.handle('session:start', () => control.startSession());
   ipcMain.handle('session:stop', () => control.stopSession());
   ipcMain.handle('admin:unlockDesktop', async () => {
     await control.unlockDesktop();
@@ -29,7 +29,7 @@ export function registerIpc(control: ControlCenter, window: BrowserWindow): void
     ipcMain.removeHandler('auth:login');
     ipcMain.removeHandler('auth:updatePassword');
     ipcMain.removeHandler('policy:update');
-    ipcMain.removeHandler('session:launch');
+    ipcMain.removeHandler('session:start');
     ipcMain.removeHandler('session:stop');
     ipcMain.removeHandler('admin:unlockDesktop');
   });

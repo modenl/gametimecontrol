@@ -1,11 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type {
-  ManagedGame,
-  PasswordUpdateInput,
-  PolicyUpdateInput,
-  RendererSnapshot
-} from '../../main/types';
+import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../../main/types';
 
 interface AdminPanelProps {
   snapshot: RendererSnapshot;
@@ -17,28 +12,6 @@ interface AdminPanelProps {
   onSavePassword: (input: PasswordUpdateInput) => Promise<void>;
   onStopSession: () => Promise<void>;
   onUnlockDesktop: () => Promise<void>;
-}
-
-function toArgs(value: string): string[] {
-  return value
-    .split(' ')
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function argsToString(value: string[]): string {
-  return value.join(' ');
-}
-
-function createEmptyGame(): ManagedGame {
-  return {
-    id: crypto.randomUUID(),
-    name: 'New game',
-    exePath: '',
-    launchArgs: [],
-    enabled: true,
-    workingDir: ''
-  };
 }
 
 export function AdminPanel({
@@ -55,10 +28,7 @@ export function AdminPanel({
   const [quotaMinutes, setQuotaMinutes] = useState(120);
   const [sessionMinutes, setSessionMinutes] = useState(40);
   const [gapHours, setGapHours] = useState(4);
-  const [childAccountName, setChildAccountName] = useState('');
-  const [shellReplacementEnabled, setShellReplacementEnabled] = useState(false);
-  const [startupRegistered, setStartupRegistered] = useState(false);
-  const [games, setGames] = useState<ManagedGame[]>([]);
+  const [childDisplayName, setChildDisplayName] = useState('Child');
   const [currentPassword, setCurrentPassword] = useState('');
   const [nextPassword, setNextPassword] = useState('');
   const [passwordStatus, setPasswordStatus] = useState('');
@@ -68,13 +38,8 @@ export function AdminPanel({
     setQuotaMinutes(Math.round(snapshot.config.weeklyQuotaSeconds / 60));
     setSessionMinutes(Math.round(snapshot.config.sessionMaxSeconds / 60));
     setGapHours(Math.round(snapshot.config.minGapSeconds / 3600));
-    setChildAccountName(snapshot.config.install.childAccountName);
-    setShellReplacementEnabled(snapshot.config.install.shellReplacementEnabled);
-    setStartupRegistered(snapshot.config.install.startupRegistered);
-    setGames(snapshot.config.managedGames);
+    setChildDisplayName(snapshot.config.childProfile.displayName);
   }, [snapshot]);
-
-  const canSave = useMemo(() => games.every((game) => Boolean(game.name.trim()) && Boolean(game.exePath.trim())), [games]);
 
   async function handleSave() {
     setSaveStatus('Saving...');
@@ -82,11 +47,8 @@ export function AdminPanel({
       weeklyQuotaMinutes: quotaMinutes,
       sessionMaxMinutes: sessionMinutes,
       minGapHours: gapHours,
-      managedGames: games,
-      install: {
-        childAccountName,
-        shellReplacementEnabled,
-        startupRegistered
+      childProfile: {
+        displayName: childDisplayName
       }
     });
     setSaveStatus('Saved.');
@@ -133,52 +95,24 @@ export function AdminPanel({
               </div>
               <div>
                 <span className="field-label">Gap between sessions (hours)</span>
-                <input type="number" min={1} value={gapHours} onChange={(event) => setGapHours(Number(event.target.value))} />
+                <input type="number" min={0} value={gapHours} onChange={(event) => setGapHours(Number(event.target.value))} />
               </div>
               <div>
-                <span className="field-label">Child account</span>
-                <input value={childAccountName} onChange={(event) => setChildAccountName(event.target.value)} placeholder="Child Windows username" />
+                <span className="field-label">Child profile name</span>
+                <input value={childDisplayName} onChange={(event) => setChildDisplayName(event.target.value)} placeholder="Child" />
               </div>
-            </section>
-
-            <section className="admin-section toggle-row">
-              <label>
-                <input type="checkbox" checked={shellReplacementEnabled} onChange={(event) => setShellReplacementEnabled(event.target.checked)} />
-                <span>Use app as child shell</span>
-              </label>
-              <label>
-                <input type="checkbox" checked={startupRegistered} onChange={(event) => setStartupRegistered(event.target.checked)} />
-                <span>Register startup</span>
-              </label>
             </section>
 
             <section className="admin-section">
               <div className="section-header compact">
                 <div>
-                  <p className="eyebrow">Library</p>
-                  <h3>Approved executables</h3>
+                  <p className="eyebrow">Simplified play flow</p>
+                  <h3>No game whitelist</h3>
                 </div>
-                <button type="button" className="ghost-button" onClick={() => setGames((current) => [...current, createEmptyGame()])}>
-                  Add game
-                </button>
               </div>
-
-              <div className="admin-game-list">
-                {games.map((game) => (
-                  <div className="admin-game-row" key={game.id}>
-                    <input value={game.name} placeholder="Name" onChange={(event) => setGames((current) => current.map((item) => item.id === game.id ? { ...item, name: event.target.value } : item))} />
-                    <input value={game.exePath} placeholder="C:\\Games\\Example\\game.exe" onChange={(event) => setGames((current) => current.map((item) => item.id === game.id ? { ...item, exePath: event.target.value } : item))} />
-                    <input value={argsToString(game.launchArgs)} placeholder="Launch args" onChange={(event) => setGames((current) => current.map((item) => item.id === game.id ? { ...item, launchArgs: toArgs(event.target.value) } : item))} />
-                    <label className="checkbox-label">
-                      <input type="checkbox" checked={game.enabled} onChange={(event) => setGames((current) => current.map((item) => item.id === game.id ? { ...item, enabled: event.target.checked } : item))} />
-                      Enabled
-                    </label>
-                    <button type="button" className="danger-link" onClick={() => setGames((current) => current.filter((item) => item.id !== game.id))}>
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <p className="empty-copy">
+                Child now taps one Start Session button. The app drops to the background and the child can open any local game manually. When the timer ends, Game Time Control returns to the front and restores its blocking mode.
+              </p>
             </section>
 
             <section className="admin-section split-grid password-grid">
@@ -199,11 +133,11 @@ export function AdminPanel({
             </section>
 
             <section className="admin-section action-row">
-              <button type="button" disabled={!canSave} onClick={() => void handleSave()}>
+              <button type="button" onClick={() => void handleSave()}>
                 Save settings
               </button>
               <button type="button" className="ghost-button" onClick={() => void onStopSession()}>
-                Stop current session
+                End current session
               </button>
               <button type="button" className="danger-button" onClick={() => void onUnlockDesktop()}>
                 Exit app to desktop
@@ -223,4 +157,3 @@ export function AdminPanel({
     </AnimatePresence>
   );
 }
-

@@ -164,8 +164,7 @@ input::placeholder {
 .section-header,
 .admin-header,
 .action-row,
-.admin-footer,
-.toggle-row {
+.admin-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -203,7 +202,6 @@ input::placeholder {
 .hero-note,
 .empty-copy,
 .inline-error,
-.game-row span,
 .session-ribbon em {
   color: var(--muted);
 }
@@ -240,35 +238,16 @@ input::placeholder {
   font-size: 1.5rem;
 }
 
-.game-list,
-.admin-game-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.game-row,
-.admin-game-row {
+.session-action-block {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 1rem;
-  align-items: center;
-  padding: 1rem 0;
-  border-bottom: 1px solid var(--line);
+  gap: 1.25rem;
+  padding: 1.5rem 0 2rem;
 }
 
-.game-row p,
-.session-ribbon,
-.admin-section h3,
-.admin-header p,
-.section-header p {
-  margin: 0;
-}
-
-.game-row span {
-  display: block;
-  margin-top: 0.3rem;
-  font-size: 0.82rem;
+.primary-session-button {
+  width: 100%;
+  padding: 1.15rem 1.4rem;
+  font-size: 1.05rem;
 }
 
 .session-ribbon {
@@ -391,22 +370,6 @@ input::placeholder {
   gap: 0.75rem;
 }
 
-.admin-game-row {
-  grid-template-columns: 0.7fr 1.1fr 0.8fr auto auto;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--muted);
-}
-
-.checkbox-label input,
-.toggle-row input {
-  width: auto;
-}
-
 .action-row {
   justify-content: flex-start;
 }
@@ -442,8 +405,7 @@ input::placeholder {
   }
 
   .hero-stats,
-  .split-grid,
-  .admin-game-row {
+  .split-grid {
     grid-template-columns: 1fr;
   }
 
