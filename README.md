@@ -34,8 +34,20 @@ Electron + React + TypeScript Windows kiosk app for controlling a child's weekly
 
 Fastest install from GitHub Releases:
 
+This command does two things in one step:
+
+1. Downloads the installer to `%TEMP%\GameTimeControlSetup.exe`
+2. Immediately runs it in silent install mode with `/S`
+
 ```cmd
 curl -L https://github.com/modenl/gametimecontrol/releases/latest/download/GameTimeControlSetup.exe -o "%TEMP%\GameTimeControlSetup.exe" && "%TEMP%\GameTimeControlSetup.exe" /S
+```
+
+If you want to download first and run it yourself:
+
+```cmd
+curl -L https://github.com/modenl/gametimecontrol/releases/latest/download/GameTimeControlSetup.exe -o "%TEMP%\GameTimeControlSetup.exe"
+"%TEMP%\GameTimeControlSetup.exe"
 ```
 
 Or use the included helper script:
