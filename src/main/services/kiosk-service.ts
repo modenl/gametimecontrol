@@ -1,4 +1,4 @@
-import { BrowserWindow, globalShortcut, powerSaveBlocker } from 'electron';
+import { BrowserWindow, globalShortcut } from 'electron';
 
 const BLOCKED_SHORTCUTS = [
   'Alt+F4',
@@ -10,13 +10,11 @@ const BLOCKED_SHORTCUTS = [
 ];
 
 export class KioskService {
-  private blockerId: number | null = null;
   private locked = true;
   private boundWindow: BrowserWindow | null = null;
 
   bindWindow(window: BrowserWindow): void {
     this.boundWindow = window;
-    this.ensurePowerBlocker();
     window.setMenuBarVisibility(false);
     this.lockWindow();
 
@@ -80,10 +78,6 @@ export class KioskService {
 
   dispose(): void {
     this.unregisterShortcuts();
-    if (this.blockerId !== null && powerSaveBlocker.isStarted(this.blockerId)) {
-      powerSaveBlocker.stop(this.blockerId);
-      this.blockerId = null;
-    }
   }
 
   private registerShortcuts(): void {
@@ -97,12 +91,4 @@ export class KioskService {
   private unregisterShortcuts(): void {
     globalShortcut.unregisterAll();
   }
-
-  private ensurePowerBlocker(): void {
-    if (this.blockerId !== null && powerSaveBlocker.isStarted(this.blockerId)) {
-      return;
-    }
-    this.blockerId = powerSaveBlocker.start('prevent-display-sleep');
-  }
 }
-
