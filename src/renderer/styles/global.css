@@ -126,7 +126,8 @@ input::placeholder {
 
 .hero-panel,
 .launcher-panel,
-.admin-panel {
+.admin-panel,
+.auth-sheet {
   background: linear-gradient(180deg, rgba(12, 18, 27, 0.78) 0%, rgba(7, 11, 17, 0.88) 100%);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
@@ -164,7 +165,9 @@ input::placeholder {
 .section-header,
 .admin-header,
 .action-row,
-.admin-footer {
+.admin-footer,
+.auth-sheet-header,
+.auth-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -188,7 +191,8 @@ input::placeholder {
 .hero-copy h1,
 .section-header h2,
 .admin-header h2,
-.section-header h3 {
+.section-header h3,
+.auth-sheet h2 {
   margin: 0;
   font-weight: 700;
   line-height: 0.95;
@@ -202,7 +206,8 @@ input::placeholder {
 .hero-note,
 .empty-copy,
 .inline-error,
-.session-ribbon em {
+.session-ribbon em,
+.auth-copy {
   color: var(--muted);
 }
 
@@ -261,14 +266,22 @@ input::placeholder {
 
 .status-chip,
 .ghost-button,
-.danger-link {
+.danger-link,
+.admin-entry-button {
   border: 1px solid var(--line-strong);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
 }
 
-.ghost-button {
+.ghost-button,
+.admin-entry-button {
   padding-inline: 1.05rem;
+}
+
+.admin-entry-button {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(9, 15, 23, 0.82) 0%, rgba(8, 13, 20, 0.64) 100%);
 }
 
 .danger-link,
@@ -280,65 +293,44 @@ input::placeholder {
   background: linear-gradient(135deg, #a01e2c 0%, #ef4d63 100%);
 }
 
-.admin-gate {
-  position: absolute;
-  top: 2rem;
-  right: 2rem;
-  z-index: 3;
-}
-
-.admin-login {
-  width: min(22rem, 28vw);
-  padding: 1rem;
-  border-radius: 22px;
-  background: rgba(8, 13, 20, 0.76);
-  border: 1px solid var(--line);
-  backdrop-filter: blur(24px);
-  display: grid;
-  gap: 0.8rem;
-}
-
-.admin-open-button {
-  background: rgba(8, 14, 22, 0.84);
-  border: 1px solid var(--line-strong);
-  color: var(--text);
-}
-
-.countdown-overlay {
-  position: absolute;
-  top: 1.35rem;
-  right: 1.35rem;
-  z-index: 4;
-  pointer-events: none;
-  display: grid;
-  gap: 0.2rem;
-  min-width: 10rem;
-  padding: 1rem 1.1rem;
-  border-radius: 20px;
-  background: rgba(6, 10, 14, 0.38);
-  border: 1px solid rgba(149, 225, 255, 0.28);
-  backdrop-filter: blur(18px);
-  text-align: right;
-}
-
-.countdown-label {
-  color: rgba(255, 255, 255, 0.66);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.68rem;
-}
-
-.countdown-overlay strong {
-  font-size: 2.6rem;
-  line-height: 1;
-}
-
+.auth-backdrop,
 .admin-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 4;
   background: rgba(3, 5, 8, 0.38);
   backdrop-filter: blur(8px);
-  z-index: 4;
+}
+
+.auth-sheet {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  z-index: 5;
+  width: min(28rem, calc(100vw - 4rem));
+  padding: 1.4rem;
+  border-radius: 28px;
+}
+
+.auth-copy {
+  margin: 0;
+  max-width: 24rem;
+  line-height: 1.6;
+}
+
+.auth-field {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.auth-actions {
+  margin-top: 1.1rem;
+  align-items: flex-start;
+}
+
+.auth-error {
+  margin: 0;
 }
 
 .admin-panel {
@@ -400,7 +392,8 @@ input::placeholder {
 
   .hero-panel,
   .launcher-panel,
-  .admin-panel {
+  .admin-panel,
+  .auth-sheet {
     border-radius: 24px;
   }
 
@@ -409,12 +402,17 @@ input::placeholder {
     grid-template-columns: 1fr;
   }
 
-  .admin-gate {
-    position: static;
-    padding: 1rem;
+  .auth-sheet {
+    top: auto;
+    right: 1rem;
+    left: 1rem;
+    bottom: 1rem;
+    width: auto;
   }
 
-  .admin-login {
-    width: 100%;
+  .auth-sheet-header,
+  .auth-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

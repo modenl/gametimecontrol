@@ -56,10 +56,10 @@ export function ChildSurface({
         transition={{ duration: 0.55, ease: 'easeOut' }}
       >
         <div className="brand-strip">
-          <button type="button" className="ghost-button" onClick={onOpenAdmin}>
-            Family control
-          </button>
           <span className="brand-kicker">Child profile: {snapshot.config.childProfile.displayName || 'Child'}</span>
+          <button type="button" className="admin-entry-button" onClick={onOpenAdmin}>
+            Admin access
+          </button>
         </div>
 
         <div className="hero-copy">

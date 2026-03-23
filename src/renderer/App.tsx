@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../main/types';
 import { AdminPanel } from './components/AdminPanel';
@@ -6,6 +7,7 @@ import { ChildSurface } from './components/ChildSurface';
 export function App() {
   const [snapshot, setSnapshot] = useState<RendererSnapshot | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminPromptOpen, setAdminPromptOpen] = useState(false);
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -25,7 +27,20 @@ export function App() {
 
   function closeAdminPanel() {
     setAdminOpen(false);
+    setAdminPromptOpen(false);
     setAdminAuthenticated(false);
+    setPassword('');
+    setAuthError('');
+  }
+
+  function openAdminEntry() {
+    setAuthError('');
+    setPassword('');
+    setAdminPromptOpen(true);
+  }
+
+  function closeAdminPrompt() {
+    setAdminPromptOpen(false);
     setPassword('');
     setAuthError('');
   }
@@ -38,6 +53,7 @@ export function App() {
       return;
     }
     setAdminAuthenticated(true);
+    setAdminPromptOpen(false);
     setAdminOpen(true);
     setPassword('');
   }
@@ -86,38 +102,62 @@ export function App() {
         snapshot={snapshot}
         busyMessage={busyMessage}
         actionError={actionError}
-        onOpenAdmin={() => setAdminOpen(true)}
+        onOpenAdmin={openAdminEntry}
         onStartSession={handleStartSession}
       />
 
-      <div className="admin-gate">
-        {!adminAuthenticated ? (
-          <div className="admin-login">
-            <label>
-              <span>Admin</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Enter password"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    void handleAdminLogin();
-                  }
-                }}
-              />
-            </label>
-            <button type="button" onClick={() => void handleAdminLogin()}>
-              Unlock
-            </button>
-            {authError ? <p className="inline-error">{authError}</p> : null}
-          </div>
-        ) : (
-          <button type="button" className="admin-open-button" onClick={() => setAdminOpen(true)}>
-            Admin Panel
-          </button>
-        )}
-      </div>
+      <AnimatePresence>
+        {adminPromptOpen ? (
+          <>
+            <motion.div
+              className="auth-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeAdminPrompt}
+            />
+            <motion.section
+              className="auth-sheet"
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.97 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+            >
+              <div className="auth-sheet-header">
+                <div>
+                  <p className="eyebrow">Admin access</p>
+                  <h2>Enter password</h2>
+                </div>
+                <button type="button" className="ghost-button" onClick={closeAdminPrompt}>
+                  Close
+                </button>
+              </div>
+              <p className="auth-copy">Open the control panel without leaving a permanent login box on the child screen.</p>
+              <label className="auth-field">
+                <span className="field-label">Password</span>
+                <input
+                  autoFocus
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Enter password"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      void handleAdminLogin();
+                    }
+                  }}
+                />
+              </label>
+              <div className="auth-actions">
+                <button type="button" onClick={() => void handleAdminLogin()}>
+                  Unlock admin
+                </button>
+                {authError ? <p className="inline-error auth-error">{authError}</p> : null}
+              </div>
+            </motion.section>
+          </>
+        ) : null}
+      </AnimatePresence>
 
       <AdminPanel
         snapshot={snapshot}
