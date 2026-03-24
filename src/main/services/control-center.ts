@@ -1,13 +1,11 @@
 import { app } from 'electron';
 import { EventEmitter } from 'node:events';
 import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../types';
-import { LauncherService } from './launcher-service';
 import { SessionService } from './session-service';
 import { StorageService } from './storage';
 
 export class ControlCenter extends EventEmitter {
   readonly storage = new StorageService(app.getPath('userData'));
-  readonly launcher = new LauncherService();
   readonly session = new SessionService(this.storage);
 
   async initialize(): Promise<void> {
@@ -73,6 +71,5 @@ export class ControlCenter extends EventEmitter {
       ...state,
       desktopUnlocked: true
     });
-    await this.launcher.launchExplorer();
   }
 }
