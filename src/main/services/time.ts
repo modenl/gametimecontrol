@@ -1,6 +1,9 @@
 export const WEEKLY_QUOTA_SECONDS = 2 * 60 * 60;
 export const SESSION_MAX_SECONDS = 40 * 60;
 export const MIN_GAP_SECONDS = 4 * 60 * 60;
+export const GRACE_EXTENSION_SECONDS = 5 * 60;
+export const GRACE_EXTENSION_MINUTES = 5;
+export const WEEKLY_GRACE_EXTENSION_LIMIT = 3;
 
 export function getWeekStartLocal(date: Date): Date {
   const copy = new Date(date);

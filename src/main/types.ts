@@ -19,6 +19,8 @@ export interface ActiveSession {
   startedAt: string;
   plannedEndAt: string;
   remainingSeconds: number;
+  baseDurationSeconds: number;
+  graceSecondsGranted: number;
   status: SessionStatus;
 }
 
@@ -34,12 +36,15 @@ export interface UsageRecord {
   startedAt: string;
   endedAt: string;
   usedSeconds: number;
+  graceSecondsGranted: number;
   reason: SessionExitReason;
 }
 
 export interface UsageLedger {
   weekStart: string;
   usedSeconds: number;
+  graceExtensionsUsed: number;
+  graceSecondsGranted: number;
   sessions: UsageRecord[];
 }
 

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../../main/types';
 
+const GRACE_EXTENSION_MINUTES = 5;
+const WEEKLY_GRACE_EXTENSION_LIMIT = 3;
+
 interface AdminPanelProps {
   snapshot: RendererSnapshot;
   open: boolean;
@@ -107,12 +110,16 @@ export function AdminPanel({
               <div className="section-header compact">
                 <div>
                   <p className="eyebrow">Simplified play flow</p>
-                  <h3>No game whitelist</h3>
+                  <h3>Finish-up grace time</h3>
                 </div>
               </div>
               <p className="empty-copy">
-                Child now taps one Start Session button. The app drops to the background and the child can open any local game manually. When the timer ends, Game Time Control returns to the front and restores its blocking mode.
+                During the last minute, the child can tap a one-time +{GRACE_EXTENSION_MINUTES} minute finish-up button. It follows the honor system and does not count against the weekly quota.
               </p>
+              <div className="admin-inline-status">
+                <span className="status-chip">Grace used this week: {snapshot.usage.graceExtensionsUsed} / {WEEKLY_GRACE_EXTENSION_LIMIT}</span>
+                <span className="status-chip">Grace minutes granted: {Math.round(snapshot.usage.graceSecondsGranted / 60)} min</span>
+              </div>
             </section>
 
             <section className="admin-section split-grid password-grid">

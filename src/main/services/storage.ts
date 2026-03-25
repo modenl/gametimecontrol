@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import { randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import type {
+  ActiveSession,
   PersistedState,
   PolicyConfig,
   RendererConfig,
@@ -11,7 +12,8 @@ import {
   MIN_GAP_SECONDS,
   SESSION_MAX_SECONDS,
   WEEKLY_QUOTA_SECONDS,
-  getWeekStartLocal
+  getWeekStartLocal,
+  secondsBetween
 } from './time';
 
 function createPasswordHash(password: string): string {
@@ -51,9 +53,11 @@ export class StorageService {
     await fs.mkdir(this.dataDir, { recursive: true });
     const defaultConfig = this.createDefaultConfig();
     this.config = this.normalizeConfig(await this.readOrCreate(this.configPath, defaultConfig));
-    this.state = await this.readOrCreate(this.statePath, this.createDefaultState());
-    this.usage = await this.readOrCreate(this.usagePath, this.createDefaultUsage());
+    this.state = this.normalizeState(await this.readOrCreate(this.statePath, this.createDefaultState()));
+    this.usage = this.normalizeUsage(await this.readOrCreate(this.usagePath, this.createDefaultUsage()));
     await this.atomicWrite(this.configPath, this.config);
+    await this.atomicWrite(this.statePath, this.state);
+    await this.atomicWrite(this.usagePath, this.usage);
   }
 
   getConfig(): PolicyConfig {
@@ -79,12 +83,12 @@ export class StorageService {
   }
 
   async saveState(next: PersistedState): Promise<void> {
-    this.state = structuredClone(next);
+    this.state = this.normalizeState(next);
     await this.atomicWrite(this.statePath, this.state);
   }
 
   async saveUsage(next: UsageLedger): Promise<void> {
-    this.usage = structuredClone(next);
+    this.usage = this.normalizeUsage(next);
     await this.atomicWrite(this.usagePath, this.usage);
   }
 
@@ -136,6 +140,74 @@ export class StorageService {
     };
   }
 
+  private normalizeState(raw: unknown): PersistedState {
+    const state = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    return {
+      activeSession: this.normalizeActiveSession(state.activeSession),
+      cooldownUntil: typeof state.cooldownUntil === 'string' ? state.cooldownUntil : null,
+      lastSessionEndedAt: typeof state.lastSessionEndedAt === 'string' ? state.lastSessionEndedAt : null,
+      desktopUnlocked: Boolean(state.desktopUnlocked)
+    };
+  }
+
+  private normalizeActiveSession(raw: unknown): ActiveSession | null {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+
+    const session = raw as Record<string, unknown>;
+    if (typeof session.id !== 'string' || typeof session.startedAt !== 'string' || typeof session.plannedEndAt !== 'string') {
+      return null;
+    }
+
+    const derivedBaseSeconds = secondsBetween(session.startedAt, session.plannedEndAt);
+
+    return {
+      id: session.id,
+      startedAt: session.startedAt,
+      plannedEndAt: session.plannedEndAt,
+      remainingSeconds:
+        typeof session.remainingSeconds === 'number' ? session.remainingSeconds : derivedBaseSeconds,
+      baseDurationSeconds:
+        typeof session.baseDurationSeconds === 'number' ? session.baseDurationSeconds : derivedBaseSeconds,
+      graceSecondsGranted:
+        typeof session.graceSecondsGranted === 'number' ? session.graceSecondsGranted : 0,
+      status: 'running'
+    };
+  }
+
+  private normalizeUsage(raw: unknown): UsageLedger {
+    const usage = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    return {
+      weekStart:
+        typeof usage.weekStart === 'string'
+          ? usage.weekStart
+          : getWeekStartLocal(new Date()).toISOString(),
+      usedSeconds: typeof usage.usedSeconds === 'number' ? usage.usedSeconds : 0,
+      graceExtensionsUsed:
+        typeof usage.graceExtensionsUsed === 'number' ? usage.graceExtensionsUsed : 0,
+      graceSecondsGranted:
+        typeof usage.graceSecondsGranted === 'number' ? usage.graceSecondsGranted : 0,
+      sessions: Array.isArray(usage.sessions)
+        ? usage.sessions.map((session) => {
+            const item = session as Record<string, unknown>;
+            return {
+              id: typeof item.id === 'string' ? item.id : randomUUID(),
+              startedAt: typeof item.startedAt === 'string' ? item.startedAt : new Date().toISOString(),
+              endedAt: typeof item.endedAt === 'string' ? item.endedAt : new Date().toISOString(),
+              usedSeconds: typeof item.usedSeconds === 'number' ? item.usedSeconds : 0,
+              graceSecondsGranted:
+                typeof item.graceSecondsGranted === 'number' ? item.graceSecondsGranted : 0,
+              reason:
+                item.reason === 'timeout' || item.reason === 'admin-stop' || item.reason === 'expired-while-offline'
+                  ? item.reason
+                  : 'admin-stop'
+            };
+          })
+        : []
+    };
+  }
+
   private async readOrCreate<T>(filePath: string, fallback: T): Promise<T> {
     try {
       const raw = await fs.readFile(filePath, 'utf8');
@@ -178,6 +250,8 @@ export class StorageService {
     return {
       weekStart: getWeekStartLocal(new Date()).toISOString(),
       usedSeconds: 0,
+      graceExtensionsUsed: 0,
+      graceSecondsGranted: 0,
       sessions: []
     };
   }

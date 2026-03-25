@@ -10,6 +10,7 @@ export function registerIpc(control: ControlCenter, window: BrowserWindow): void
   );
   ipcMain.handle('policy:update', (_event, input: PolicyUpdateInput) => control.updatePolicy(input));
   ipcMain.handle('session:start', () => control.startSession());
+  ipcMain.handle('session:grace', () => control.requestGraceExtension());
   ipcMain.handle('session:stop', () => control.stopSession());
   ipcMain.handle('admin:unlockDesktop', async () => {
     await control.unlockDesktop();
@@ -30,6 +31,7 @@ export function registerIpc(control: ControlCenter, window: BrowserWindow): void
     ipcMain.removeHandler('auth:updatePassword');
     ipcMain.removeHandler('policy:update');
     ipcMain.removeHandler('session:start');
+    ipcMain.removeHandler('session:grace');
     ipcMain.removeHandler('session:stop');
     ipcMain.removeHandler('admin:unlockDesktop');
   });

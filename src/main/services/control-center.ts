@@ -60,6 +60,11 @@ export class ControlCenter extends EventEmitter {
     this.emit('changed', this.getSnapshot());
   }
 
+  async requestGraceExtension(): Promise<void> {
+    await this.session.requestGraceExtension();
+    this.emit('changed', this.getSnapshot());
+  }
+
   async stopSession(): Promise<void> {
     await this.session.stopByAdmin();
     this.emit('changed', this.getSnapshot());

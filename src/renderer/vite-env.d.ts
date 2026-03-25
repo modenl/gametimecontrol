@@ -10,6 +10,7 @@ declare global {
       updatePassword(input: PasswordUpdateInput): Promise<void>;
       updatePolicy(input: PolicyUpdateInput): Promise<void>;
       startSession(): Promise<void>;
+      requestGraceExtension(): Promise<void>;
       stopSession(): Promise<void>;
       unlockDesktop(): Promise<void>;
       subscribe(listener: (snapshot: RendererSnapshot) => void): () => void;
