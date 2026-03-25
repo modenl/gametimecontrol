@@ -22,11 +22,15 @@ interface CountdownOverlayState {
 function getCountdownOverlayState(): CountdownOverlayState | null {
   const snapshot = control.getSnapshot();
   const activeSession = snapshot.state.activeSession;
-  if (!activeSession || snapshot.state.desktopUnlocked || activeSession.remainingSeconds > 60) {
+  if (!activeSession || snapshot.state.desktopUnlocked) {
     return null;
   }
 
   const graceAlreadyUsed = activeSession.graceSecondsGranted > 0;
+  if (!graceAlreadyUsed && activeSession.remainingSeconds > 60) {
+    return null;
+  }
+
   const graceRemainingThisWeek = Math.max(0, WEEKLY_GRACE_EXTENSION_LIMIT - snapshot.usage.graceExtensionsUsed);
 
   return {
@@ -84,7 +88,7 @@ async function ensureOverlayWindow(): Promise<BrowserWindow> {
     minimizable: false,
     maximizable: false,
     closable: false,
-    focusable: true,
+    focusable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
@@ -99,6 +103,7 @@ async function ensureOverlayWindow(): Promise<BrowserWindow> {
 
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   positionOverlayWindow();
 
   const overlayHtml = `
@@ -220,6 +225,7 @@ async function syncCountdownOverlay(): Promise<void> {
   if (!overlayState) {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.hide();
+      overlayWindow.setFocusable(false);
       overlayWindow.setIgnoreMouseEvents(true, { forward: true });
     }
     return;
@@ -246,7 +252,15 @@ async function syncCountdownOverlay(): Promise<void> {
     })();`,
     true
   );
-  window.setIgnoreMouseEvents(!overlayState.canRequestGrace, { forward: true });
+
+  if (overlayState.canRequestGrace) {
+    window.setFocusable(true);
+    window.setIgnoreMouseEvents(false);
+  } else {
+    window.setFocusable(false);
+    window.setIgnoreMouseEvents(true, { forward: true });
+  }
+
   positionOverlayWindow();
   window.showInactive();
 }
