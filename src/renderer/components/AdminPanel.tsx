@@ -1,16 +1,36 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../../main/types';
+import type {
+  CountdownEvidenceSession,
+  PasswordUpdateInput,
+  PolicyUpdateInput,
+  RendererSnapshot
+} from '../../main/types';
 
-const GRACE_EXTENSION_MINUTES = 5;
-const WEEKLY_GRACE_EXTENSION_LIMIT = 3;
+function formatMinutesValue(minutes: number): string {
+  const rounded = Math.round(minutes * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}` : `${rounded.toFixed(1)}`;
+}
+
+function formatEvidenceTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit'
+  }).format(new Date(value));
+}
 
 interface AdminPanelProps {
   snapshot: RendererSnapshot;
   open: boolean;
   busyMessage: string;
   actionError: string;
+  evidenceSessions: CountdownEvidenceSession[];
+  evidenceLoading: boolean;
   onClose: () => void;
+  onRefreshEvidence: () => Promise<void>;
   onSavePolicy: (input: PolicyUpdateInput) => Promise<void>;
   onSavePassword: (input: PasswordUpdateInput) => Promise<void>;
   onStopSession: () => Promise<void>;
@@ -22,7 +42,10 @@ export function AdminPanel({
   open,
   busyMessage,
   actionError,
+  evidenceSessions,
+  evidenceLoading,
   onClose,
+  onRefreshEvidence,
   onSavePolicy,
   onSavePassword,
   onStopSession,
@@ -30,6 +53,7 @@ export function AdminPanel({
 }: AdminPanelProps) {
   const [quotaMinutes, setQuotaMinutes] = useState(120);
   const [sessionMinutes, setSessionMinutes] = useState(40);
+  const [graceMinutes, setGraceMinutes] = useState(5);
   const [gapHours, setGapHours] = useState(4);
   const [childDisplayName, setChildDisplayName] = useState('Child');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -38,9 +62,10 @@ export function AdminPanel({
   const [saveStatus, setSaveStatus] = useState('');
 
   useEffect(() => {
-    setQuotaMinutes(Math.round(snapshot.config.weeklyQuotaSeconds / 60));
-    setSessionMinutes(Math.round(snapshot.config.sessionMaxSeconds / 60));
-    setGapHours(Math.round(snapshot.config.minGapSeconds / 3600));
+    setQuotaMinutes(snapshot.config.weeklyQuotaSeconds / 60);
+    setSessionMinutes(snapshot.config.sessionMaxSeconds / 60);
+    setGraceMinutes(snapshot.config.graceSeconds / 60);
+    setGapHours(snapshot.config.minGapSeconds / 3600);
     setChildDisplayName(snapshot.config.childProfile.displayName);
   }, [snapshot]);
 
@@ -49,6 +74,7 @@ export function AdminPanel({
     await onSavePolicy({
       weeklyQuotaMinutes: quotaMinutes,
       sessionMaxMinutes: sessionMinutes,
+      graceMinutes,
       minGapHours: gapHours,
       childProfile: {
         displayName: childDisplayName
@@ -90,15 +116,19 @@ export function AdminPanel({
             <section className="admin-section split-grid">
               <div>
                 <span className="field-label">Weekly quota (minutes)</span>
-                <input type="number" min={10} value={quotaMinutes} onChange={(event) => setQuotaMinutes(Number(event.target.value))} />
+                <input type="number" min={1} step={0.1} value={quotaMinutes} onChange={(event) => setQuotaMinutes(Number(event.target.value))} />
               </div>
               <div>
                 <span className="field-label">Session max (minutes)</span>
-                <input type="number" min={1} value={sessionMinutes} onChange={(event) => setSessionMinutes(Number(event.target.value))} />
+                <input type="number" min={0.1} step={0.1} value={sessionMinutes} onChange={(event) => setSessionMinutes(Number(event.target.value))} />
+              </div>
+              <div>
+                <span className="field-label">Grace length (minutes)</span>
+                <input type="number" min={0} step={0.1} value={graceMinutes} onChange={(event) => setGraceMinutes(Number(event.target.value))} />
               </div>
               <div>
                 <span className="field-label">Gap between sessions (hours)</span>
-                <input type="number" min={0} value={gapHours} onChange={(event) => setGapHours(Number(event.target.value))} />
+                <input type="number" min={0} step={0.1} value={gapHours} onChange={(event) => setGapHours(Number(event.target.value))} />
               </div>
               <div>
                 <span className="field-label">Child profile name</span>
@@ -109,17 +139,70 @@ export function AdminPanel({
             <section className="admin-section">
               <div className="section-header compact">
                 <div>
-                  <p className="eyebrow">Simplified play flow</p>
-                  <h3>Finish-up grace time</h3>
+                  <p className="eyebrow">Automatic grace</p>
+                  <h3>Warning window</h3>
                 </div>
               </div>
               <p className="empty-copy">
-                During the last minute, the child can tap a one-time +{GRACE_EXTENSION_MINUTES} minute finish-up button. It follows the honor system and does not count against the weekly quota.
+                When the main session time ends, the app automatically gives a {formatMinutesValue(graceMinutes)}-minute flashing grace countdown. During that period it also plays repeating alert sounds so the child is much less likely to miss the final stop.
               </p>
               <div className="admin-inline-status">
-                <span className="status-chip">Grace used this week: {snapshot.usage.graceExtensionsUsed} / {WEEKLY_GRACE_EXTENSION_LIMIT}</span>
-                <span className="status-chip">Grace minutes granted: {Math.round(snapshot.usage.graceSecondsGranted / 60)} min</span>
+                <span className="status-chip">Grace length: {formatMinutesValue(graceMinutes)} min</span>
+                <span className="status-chip">Session test values accept decimals like 0.1 min</span>
               </div>
+            </section>
+
+            <section className="admin-section">
+              <div className="section-header compact">
+                <div>
+                  <p className="eyebrow">Evidence</p>
+                  <h3>Countdown screenshots</h3>
+                </div>
+                <button type="button" className="ghost-button" onClick={() => void onRefreshEvidence()}>
+                  {evidenceLoading ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+              <p className="empty-copy">
+                When grace countdown starts, the app captures 3 full-screen screenshots at 3-second intervals and keeps them here as proof the timer was visible.
+              </p>
+              {evidenceSessions.length === 0 ? (
+                <div className="evidence-empty">
+                  <span className="status-chip">No countdown evidence yet</span>
+                  <p className="empty-copy">Start a short test session and let it reach grace to populate this gallery.</p>
+                </div>
+              ) : (
+                <div className="evidence-session-list">
+                  {evidenceSessions.map((session) => (
+                    <section key={session.sessionId} className="evidence-session-card">
+                      <div className="evidence-session-header">
+                        <div>
+                          <p className="eyebrow">Session</p>
+                          <h4>{formatEvidenceTime(session.capturedAt)}</h4>
+                        </div>
+                        <span className="status-chip">{session.imageCount} shots</span>
+                      </div>
+                      <div className="evidence-grid">
+                        {session.images.map((image) => (
+                          <a
+                            key={image.id}
+                            className="evidence-shot"
+                            href={image.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={image.filePath}
+                          >
+                            <img src={image.fileUrl} alt={`Countdown evidence shot ${image.shotNumber}`} loading="lazy" />
+                            <div className="evidence-shot-meta">
+                              <strong>Shot {image.shotNumber}</strong>
+                              <span>{formatEvidenceTime(image.capturedAt)}</span>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="admin-section split-grid password-grid">

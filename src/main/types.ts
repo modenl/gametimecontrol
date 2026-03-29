@@ -6,6 +6,7 @@ export interface PolicyConfig {
   adminPasswordHash: string;
   weeklyQuotaSeconds: number;
   sessionMaxSeconds: number;
+  graceSeconds: number;
   minGapSeconds: number;
   childProfile: ChildProfileSettings;
 }
@@ -51,6 +52,7 @@ export interface UsageLedger {
 export interface RendererConfig {
   weeklyQuotaSeconds: number;
   sessionMaxSeconds: number;
+  graceSeconds: number;
   minGapSeconds: number;
   childProfile: ChildProfileSettings;
 }
@@ -74,6 +76,7 @@ export interface RendererSnapshot {
 export interface PolicyUpdateInput {
   weeklyQuotaMinutes: number;
   sessionMaxMinutes: number;
+  graceMinutes: number;
   minGapHours: number;
   childProfile: ChildProfileSettings;
 }
@@ -81,4 +84,20 @@ export interface PolicyUpdateInput {
 export interface PasswordUpdateInput {
   currentPassword: string;
   nextPassword: string;
+}
+
+export interface CountdownEvidenceImage {
+  id: string;
+  sessionId: string;
+  shotNumber: number;
+  capturedAt: string;
+  filePath: string;
+  fileUrl: string;
+}
+
+export interface CountdownEvidenceSession {
+  sessionId: string;
+  capturedAt: string;
+  imageCount: number;
+  images: CountdownEvidenceImage[];
 }

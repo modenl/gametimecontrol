@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
-import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../main/types';
+import type {
+  CountdownEvidenceSession,
+  PasswordUpdateInput,
+  PolicyUpdateInput,
+  RendererSnapshot
+} from '../main/types';
 
 declare global {
   interface Window {
@@ -10,8 +15,8 @@ declare global {
       updatePassword(input: PasswordUpdateInput): Promise<void>;
       updatePolicy(input: PolicyUpdateInput): Promise<void>;
       startSession(): Promise<void>;
-      requestGraceExtension(): Promise<void>;
       stopSession(): Promise<void>;
+      listCountdownEvidence(): Promise<CountdownEvidenceSession[]>;
       unlockDesktop(): Promise<void>;
       subscribe(listener: (snapshot: RendererSnapshot) => void): () => void;
     };

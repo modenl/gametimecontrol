@@ -1,6 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../main/types';
+import type {
+  CountdownEvidenceSession,
+  PasswordUpdateInput,
+  PolicyUpdateInput,
+  RendererSnapshot
+} from '../main/types';
 import { AdminPanel } from './components/AdminPanel';
 import { ChildSurface } from './components/ChildSurface';
 
@@ -13,6 +18,8 @@ export function App() {
   const [authError, setAuthError] = useState('');
   const [busyMessage, setBusyMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const [evidenceSessions, setEvidenceSessions] = useState<CountdownEvidenceSession[]>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
@@ -24,6 +31,18 @@ export function App() {
       unsubscribe?.();
     };
   }, []);
+
+  async function loadEvidence() {
+    setEvidenceLoading(true);
+    try {
+      const nextEvidence = await window.gametime.listCountdownEvidence();
+      setEvidenceSessions(nextEvidence);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to load countdown evidence.');
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }
 
   function closeAdminPanel() {
     setAdminOpen(false);
@@ -56,6 +75,7 @@ export function App() {
     setAdminPromptOpen(false);
     setAdminOpen(true);
     setPassword('');
+    await loadEvidence();
   }
 
   async function wrapAction(message: string, action: () => Promise<void>) {
@@ -164,7 +184,10 @@ export function App() {
         open={adminOpen && adminAuthenticated}
         busyMessage={busyMessage}
         actionError={actionError}
+        evidenceSessions={evidenceSessions}
+        evidenceLoading={evidenceLoading}
         onClose={closeAdminPanel}
+        onRefreshEvidence={loadEvidence}
         onSavePolicy={handlePolicySave}
         onSavePassword={handlePasswordSave}
         onStopSession={handleStopSession}

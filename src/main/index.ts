@@ -1,47 +1,52 @@
-import { app, BrowserWindow, screen } from 'electron';
+import { execFile } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import { app, BrowserWindow, desktopCapturer, screen } from 'electron';
 import { join } from 'node:path';
 import { ControlCenter } from './services/control-center';
 import { KioskService } from './services/kiosk-service';
 import { registerIpc } from './ipc/register-ipc';
-import { GRACE_EXTENSION_MINUTES, WEEKLY_GRACE_EXTENSION_LIMIT } from './services/time';
 
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let allowWindowClose = false;
+let graceAlarmInterval: NodeJS.Timeout | null = null;
+let countdownEvidenceSessionId: string | null = null;
+let countdownEvidenceTimers: NodeJS.Timeout[] = [];
 
 const kiosk = new KioskService();
 const control = new ControlCenter();
+const COUNTDOWN_EVIDENCE_SHOTS = 3;
+const COUNTDOWN_EVIDENCE_INTERVAL_MS = 3000;
 
 interface CountdownOverlayState {
   countdownText: string;
   label: string;
   helperText: string;
-  canRequestGrace: boolean;
+}
+
+function formatMinutesValue(minutes: number): string {
+  const rounded = Math.round(minutes * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}` : `${rounded.toFixed(1)}`;
 }
 
 function getCountdownOverlayState(): CountdownOverlayState | null {
   const snapshot = control.getSnapshot();
   const activeSession = snapshot.state.activeSession;
-  if (!activeSession || snapshot.state.desktopUnlocked) {
+  if (!activeSession || snapshot.state.desktopUnlocked || activeSession.graceSecondsGranted <= 0) {
     return null;
   }
 
-  const graceAlreadyUsed = activeSession.graceSecondsGranted > 0;
-  if (!graceAlreadyUsed && activeSession.remainingSeconds > 60) {
+  const inGracePeriod = activeSession.remainingSeconds <= activeSession.graceSecondsGranted;
+  if (!inGracePeriod) {
     return null;
   }
 
-  const graceRemainingThisWeek = Math.max(0, WEEKLY_GRACE_EXTENSION_LIMIT - snapshot.usage.graceExtensionsUsed);
+  const graceMinutes = activeSession.graceSecondsGranted / 60;
 
   return {
     countdownText: formatCountdown(activeSession.remainingSeconds),
-    label: graceAlreadyUsed ? 'Grace time ending' : 'Session ending',
-    helperText: graceAlreadyUsed
-      ? 'Extra 5 minutes already used'
-      : graceRemainingThisWeek > 0
-        ? `${graceRemainingThisWeek} grace request${graceRemainingThisWeek === 1 ? '' : 's'} left this week`
-        : 'No grace requests left this week',
-    canRequestGrace: !graceAlreadyUsed && graceRemainingThisWeek > 0
+    label: 'Grace countdown',
+    helperText: `Finish now. The app will lock again when this ${formatMinutesValue(graceMinutes)}-minute countdown ends.`
   };
 }
 
@@ -52,6 +57,135 @@ function formatCountdown(seconds: number): string {
   return `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 
+function getEvidenceRootDir(): string {
+  return join(app.getPath('userData'), 'control-data', 'countdown-evidence');
+}
+
+function clearCountdownEvidenceSchedule(resetSessionId = true): void {
+  for (const timer of countdownEvidenceTimers) {
+    clearTimeout(timer);
+  }
+  countdownEvidenceTimers = [];
+  if (resetSessionId) {
+    countdownEvidenceSessionId = null;
+  }
+}
+
+async function captureCountdownEvidence(sessionId: string, shotNumber: number): Promise<void> {
+  const snapshot = control.getSnapshot();
+  const activeSession = snapshot.state.activeSession;
+  if (!activeSession || activeSession.id !== sessionId || activeSession.graceSecondsGranted <= 0) {
+    return;
+  }
+
+  if (activeSession.remainingSeconds > activeSession.graceSecondsGranted) {
+    return;
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: {
+      width: Math.max(1, primaryDisplay.size.width),
+      height: Math.max(1, primaryDisplay.size.height)
+    },
+    fetchWindowIcons: false
+  });
+
+  const preferredSource =
+    sources.find((source) => source.display_id === String(primaryDisplay.id)) ?? sources[0];
+
+  if (!preferredSource || preferredSource.thumbnail.isEmpty()) {
+    return;
+  }
+
+  const evidenceDir = join(getEvidenceRootDir(), sessionId);
+  await fs.mkdir(evidenceDir, { recursive: true });
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filePath = join(evidenceDir, `${timestamp}-shot-${shotNumber}.png`);
+  await fs.writeFile(filePath, preferredSource.thumbnail.toPNG());
+}
+
+function scheduleCountdownEvidence(sessionId: string): void {
+  if (countdownEvidenceSessionId === sessionId) {
+    return;
+  }
+
+  clearCountdownEvidenceSchedule(false);
+  countdownEvidenceSessionId = sessionId;
+
+  for (let index = 0; index < COUNTDOWN_EVIDENCE_SHOTS; index += 1) {
+    const timer = setTimeout(() => {
+      void captureCountdownEvidence(sessionId, index + 1);
+    }, index * COUNTDOWN_EVIDENCE_INTERVAL_MS);
+    countdownEvidenceTimers.push(timer);
+  }
+}
+
+function syncCountdownEvidence(): void {
+  const snapshot = control.getSnapshot();
+  const activeSession = snapshot.state.activeSession;
+
+  if (
+    !activeSession ||
+    snapshot.state.desktopUnlocked ||
+    activeSession.graceSecondsGranted <= 0 ||
+    activeSession.remainingSeconds > activeSession.graceSecondsGranted
+  ) {
+    clearCountdownEvidenceSchedule();
+    return;
+  }
+
+  scheduleCountdownEvidence(activeSession.id);
+}
+
+function playWindowsSystemAlert(): void {
+  execFile(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-WindowStyle',
+      'Hidden',
+      '-Command',
+      "[System.Media.SystemSounds]::Exclamation.Play(); Start-Sleep -Milliseconds 180; [System.Media.SystemSounds]::Hand.Play()"
+    ],
+    { windowsHide: true },
+    () => undefined
+  );
+}
+
+function playGraceAlarmOnce(): void {
+  playWindowsSystemAlert();
+
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    return;
+  }
+
+  void overlayWindow.webContents
+    .executeJavaScript('window.__playGraceAlarm?.()', true)
+    .catch(() => undefined);
+}
+
+function syncGraceAlarm(active: boolean): void {
+  if (!active) {
+    if (graceAlarmInterval) {
+      clearInterval(graceAlarmInterval);
+      graceAlarmInterval = null;
+    }
+    return;
+  }
+
+  if (graceAlarmInterval) {
+    return;
+  }
+
+  playGraceAlarmOnce();
+  graceAlarmInterval = setInterval(() => {
+    playGraceAlarmOnce();
+  }, 8000);
+}
+
 function positionOverlayWindow(): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     return;
@@ -59,8 +193,8 @@ function positionOverlayWindow(): void {
 
   const display = screen.getPrimaryDisplay();
   const bounds = display.workArea;
-  const width = 248;
-  const height = 158;
+  const width = 278;
+  const height = 156;
   const margin = 18;
 
   overlayWindow.setBounds({
@@ -78,8 +212,8 @@ async function ensureOverlayWindow(): Promise<BrowserWindow> {
   }
 
   overlayWindow = new BrowserWindow({
-    width: 248,
-    height: 158,
+    width: 278,
+    height: 156,
     show: false,
     frame: false,
     transparent: true,
@@ -94,7 +228,6 @@ async function ensureOverlayWindow(): Promise<BrowserWindow> {
     hasShadow: false,
     backgroundColor: '#00000000',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false
@@ -127,86 +260,95 @@ async function ensureOverlayWindow(): Promise<BrowserWindow> {
           .overlay {
             width: 100%;
             display: grid;
-            gap: 6px;
+            gap: 8px;
             padding: 16px 18px;
             border-radius: 20px;
-            background: rgba(6, 10, 14, 0.34);
-            border: 1px solid rgba(149, 225, 255, 0.26);
+            background: rgba(29, 8, 8, 0.58);
+            border: 1px solid rgba(255, 113, 113, 0.46);
             backdrop-filter: blur(16px);
-            color: #f3f7fb;
+            color: #fff4f4;
             text-align: right;
             box-sizing: border-box;
+            animation: pulse 0.85s ease-in-out infinite alternate;
           }
           .label {
-            color: rgba(255, 255, 255, 0.72);
+            color: rgba(255, 220, 220, 0.82);
             text-transform: uppercase;
-            letter-spacing: 0.14em;
+            letter-spacing: 0.16em;
             font-size: 11px;
           }
           .time {
-            font-size: 42px;
+            font-size: 48px;
             line-height: 1;
-            font-weight: 700;
-            letter-spacing: -0.05em;
+            font-weight: 800;
+            letter-spacing: -0.06em;
+            animation: blink 0.9s step-end infinite;
           }
           .helper {
-            color: rgba(255, 255, 255, 0.68);
+            color: rgba(255, 234, 234, 0.84);
             font-size: 12px;
-            line-height: 1.35;
+            line-height: 1.4;
           }
-          .button-row {
-            display: flex;
-            justify-content: flex-end;
-            min-height: 36px;
+          @keyframes pulse {
+            from {
+              transform: scale(1);
+              box-shadow: 0 0 0 rgba(255, 78, 78, 0.16);
+              background: rgba(29, 8, 8, 0.52);
+            }
+            to {
+              transform: scale(1.035);
+              box-shadow: 0 0 28px rgba(255, 78, 78, 0.3);
+              background: rgba(66, 12, 12, 0.78);
+            }
           }
-          .grace-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 9px 12px;
-            border-radius: 999px;
-            border: 1px solid rgba(160, 214, 255, 0.32);
-            background: linear-gradient(135deg, rgba(140, 224, 255, 0.98) 0%, rgba(47, 167, 241, 0.98) 100%);
-            color: #04111b;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-          }
-          .grace-button[hidden] {
-            display: none;
-          }
-          .grace-button:disabled {
-            opacity: 0.6;
-            cursor: wait;
+          @keyframes blink {
+            50% {
+              opacity: 0.28;
+            }
           }
         </style>
       </head>
       <body>
         <div class="overlay">
-          <div id="label" class="label">Session ending</div>
-          <div id="time" class="time">1:00</div>
-          <div id="helper" class="helper"></div>
-          <div class="button-row">
-            <button id="grace-button" class="grace-button" type="button">+${GRACE_EXTENSION_MINUTES} min</button>
-          </div>
+          <div id="label" class="label">Grace countdown</div>
+          <div id="time" class="time">5:00</div>
+          <div id="helper" class="helper">Finish now.</div>
         </div>
         <script>
-          const button = document.getElementById('grace-button');
-          const helper = document.getElementById('helper');
-          button.addEventListener('click', async () => {
-            if (button.disabled) {
-              return;
-            }
-            button.disabled = true;
-            button.textContent = 'Adding...';
+          let audioContext;
+          window.__playGraceAlarm = async () => {
             try {
-              await window.gametime.requestGraceExtension();
-            } catch (error) {
-              helper.textContent = error && error.message ? error.message : 'Unable to add time.';
-              button.disabled = false;
-              button.textContent = '+${GRACE_EXTENSION_MINUTES} min';
+              const Context = window.AudioContext || window.webkitAudioContext;
+              if (!Context) {
+                return;
+              }
+              audioContext = audioContext || new Context();
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
+              const pattern = [
+                { frequency: 880, delay: 0, duration: 0.14 },
+                { frequency: 1174, delay: 0.2, duration: 0.16 },
+                { frequency: 988, delay: 0.44, duration: 0.24 }
+              ];
+              const start = audioContext.currentTime + 0.02;
+              for (const tone of pattern) {
+                const oscillator = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                oscillator.type = 'square';
+                oscillator.frequency.value = tone.frequency;
+                gain.gain.setValueAtTime(0.0001, start + tone.delay);
+                gain.gain.exponentialRampToValueAtTime(0.12, start + tone.delay + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + tone.delay + tone.duration);
+                oscillator.connect(gain);
+                gain.connect(audioContext.destination);
+                oscillator.start(start + tone.delay);
+                oscillator.stop(start + tone.delay + tone.duration + 0.03);
+              }
+            } catch {
+              // Ignore audio errors and keep the visual countdown running.
             }
-          });
+          };
         </script>
       </body>
     </html>
@@ -222,10 +364,11 @@ async function ensureOverlayWindow(): Promise<BrowserWindow> {
 
 async function syncCountdownOverlay(): Promise<void> {
   const overlayState = getCountdownOverlayState();
+
   if (!overlayState) {
+    syncGraceAlarm(false);
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.hide();
-      overlayWindow.setFocusable(false);
       overlayWindow.setIgnoreMouseEvents(true, { forward: true });
     }
     return;
@@ -243,26 +386,13 @@ async function syncCountdownOverlay(): Promise<void> {
       document.getElementById('label').textContent = state.label;
       document.getElementById('time').textContent = state.countdownText;
       document.getElementById('helper').textContent = state.helperText;
-      const button = document.getElementById('grace-button');
-      button.hidden = !state.canRequestGrace;
-      if (state.canRequestGrace) {
-        button.disabled = false;
-        button.textContent = '+${GRACE_EXTENSION_MINUTES} min';
-      }
     })();`,
     true
   );
 
-  if (overlayState.canRequestGrace) {
-    window.setFocusable(true);
-    window.setIgnoreMouseEvents(false);
-  } else {
-    window.setFocusable(false);
-    window.setIgnoreMouseEvents(true, { forward: true });
-  }
-
   positionOverlayWindow();
   window.showInactive();
+  syncGraceAlarm(true);
 }
 
 function syncWindowMode(): void {
@@ -277,6 +407,7 @@ function syncWindowMode(): void {
     kiosk.lockWindow();
   }
 
+  syncCountdownEvidence();
   void syncCountdownOverlay();
 }
 
@@ -337,6 +468,8 @@ async function createWindow(): Promise<void> {
 
   mainWindow.on('closed', () => {
     control.off('changed', syncWindowMode);
+    clearCountdownEvidenceSchedule();
+    syncGraceAlarm(false);
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.close();
       overlayWindow = null;
@@ -365,6 +498,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   kiosk.dispose();
+  clearCountdownEvidenceSchedule();
+  syncGraceAlarm(false);
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.destroy();
     overlayWindow = null;

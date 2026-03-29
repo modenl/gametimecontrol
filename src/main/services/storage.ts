@@ -9,6 +9,7 @@ import type {
   UsageLedger
 } from '../types';
 import {
+  DEFAULT_GRACE_SECONDS,
   MIN_GAP_SECONDS,
   SESSION_MAX_SECONDS,
   WEEKLY_QUOTA_SECONDS,
@@ -77,6 +78,10 @@ export class StorageService {
     return structuredClone(this.usage);
   }
 
+  getCountdownEvidenceDir(): string {
+    return join(this.dataDir, 'countdown-evidence');
+  }
+
   async saveConfig(next: PolicyConfig): Promise<void> {
     this.config = this.normalizeConfig(next);
     await this.atomicWrite(this.configPath, this.config);
@@ -125,6 +130,10 @@ export class StorageService {
         typeof config.sessionMaxSeconds === 'number'
           ? config.sessionMaxSeconds
           : SESSION_MAX_SECONDS,
+      graceSeconds:
+        typeof config.graceSeconds === 'number'
+          ? config.graceSeconds
+          : DEFAULT_GRACE_SECONDS,
       minGapSeconds:
         typeof config.minGapSeconds === 'number' ? config.minGapSeconds : MIN_GAP_SECONDS,
       childProfile: {
@@ -230,6 +239,7 @@ export class StorageService {
       adminPasswordHash: createPasswordHash('qwert'),
       weeklyQuotaSeconds: WEEKLY_QUOTA_SECONDS,
       sessionMaxSeconds: SESSION_MAX_SECONDS,
+      graceSeconds: DEFAULT_GRACE_SECONDS,
       minGapSeconds: MIN_GAP_SECONDS,
       childProfile: {
         displayName: 'Child'

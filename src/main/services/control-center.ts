@@ -1,6 +1,16 @@
+import { promises as fs } from 'node:fs';
+import type { Dirent } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { app } from 'electron';
 import { EventEmitter } from 'node:events';
-import type { PasswordUpdateInput, PolicyUpdateInput, RendererSnapshot } from '../types';
+import type {
+  CountdownEvidenceImage,
+  CountdownEvidenceSession,
+  PasswordUpdateInput,
+  PolicyUpdateInput,
+  RendererSnapshot
+} from '../types';
 import { SessionService } from './session-service';
 import { StorageService } from './storage';
 
@@ -43,8 +53,9 @@ export class ControlCenter extends EventEmitter {
     const current = this.storage.getConfig();
     const next = {
       ...current,
-      weeklyQuotaSeconds: Math.max(600, Math.round(input.weeklyQuotaMinutes * 60)),
-      sessionMaxSeconds: Math.max(60, Math.round(input.sessionMaxMinutes * 60)),
+      weeklyQuotaSeconds: Math.max(60, Math.round(input.weeklyQuotaMinutes * 60)),
+      sessionMaxSeconds: Math.max(1, Math.round(input.sessionMaxMinutes * 60)),
+      graceSeconds: Math.max(0, Math.round(input.graceMinutes * 60)),
       minGapSeconds: Math.max(0, Math.round(input.minGapHours * 3600)),
       childProfile: {
         displayName: input.childProfile.displayName.trim() || 'Child'
@@ -60,11 +71,6 @@ export class ControlCenter extends EventEmitter {
     this.emit('changed', this.getSnapshot());
   }
 
-  async requestGraceExtension(): Promise<void> {
-    await this.session.requestGraceExtension();
-    this.emit('changed', this.getSnapshot());
-  }
-
   async stopSession(): Promise<void> {
     await this.session.stopByAdmin();
     this.emit('changed', this.getSnapshot());
@@ -76,5 +82,90 @@ export class ControlCenter extends EventEmitter {
       ...state,
       desktopUnlocked: true
     });
+  }
+
+  async listCountdownEvidence(): Promise<CountdownEvidenceSession[]> {
+    const rootDir = this.storage.getCountdownEvidenceDir();
+
+    let sessionDirs: Dirent[] = [];
+    try {
+      sessionDirs = await fs.readdir(rootDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    const sessions = await Promise.all(
+      sessionDirs
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const sessionId = entry.name;
+          const sessionDir = join(rootDir, sessionId);
+
+          let files: Dirent[] = [];
+          try {
+            files = await fs.readdir(sessionDir, { withFileTypes: true });
+          } catch {
+            return null;
+          }
+
+          const images = (
+            await Promise.all(
+              files
+                .filter((file) => file.isFile() && file.name.toLowerCase().endsWith('.png'))
+                .map(async (file) => this.readEvidenceImage(sessionId, sessionDir, file.name))
+            )
+          ).filter((image): image is CountdownEvidenceImage => Boolean(image));
+
+          if (images.length === 0) {
+            return null;
+          }
+
+          images.sort((left, right) => {
+            if (left.shotNumber !== right.shotNumber) {
+              return left.shotNumber - right.shotNumber;
+            }
+            return left.capturedAt.localeCompare(right.capturedAt);
+          });
+
+          const capturedAt = [...images]
+            .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt))[0]
+            .capturedAt;
+
+          return {
+            sessionId,
+            capturedAt,
+            imageCount: images.length,
+            images
+          } satisfies CountdownEvidenceSession;
+        })
+    );
+
+    return sessions
+      .filter((session): session is CountdownEvidenceSession => Boolean(session))
+      .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt));
+  }
+
+  private async readEvidenceImage(
+    sessionId: string,
+    sessionDir: string,
+    fileName: string
+  ): Promise<CountdownEvidenceImage | null> {
+    const filePath = join(sessionDir, fileName);
+
+    try {
+      const stat = await fs.stat(filePath);
+      const shotMatch = fileName.match(/-shot-(\d+)\.png$/i);
+
+      return {
+        id: `${sessionId}:${fileName}`,
+        sessionId,
+        shotNumber: shotMatch ? Number(shotMatch[1]) : 0,
+        capturedAt: stat.mtime.toISOString(),
+        filePath,
+        fileUrl: pathToFileURL(filePath).toString()
+      };
+    } catch {
+      return null;
+    }
   }
 }

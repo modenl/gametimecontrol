@@ -1,6 +1,6 @@
 {
   "name": "gametimecontrol",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "Windows game time control kiosk app for children.",
   "main": "./out/main/index.js",
@@ -60,3 +60,4 @@
     }
   }
 }
+

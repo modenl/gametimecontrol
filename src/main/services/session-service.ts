@@ -8,13 +8,7 @@ import type {
   UsageLedger,
   UsageRecord
 } from '../types';
-import {
-  GRACE_EXTENSION_SECONDS,
-  WEEKLY_GRACE_EXTENSION_LIMIT,
-  clamp,
-  getWeekStartLocal,
-  secondsBetween
-} from './time';
+import { clamp, getWeekStartLocal, secondsBetween } from './time';
 import { StorageService } from './storage';
 
 export class SessionService extends EventEmitter {
@@ -118,14 +112,17 @@ export class SessionService extends EventEmitter {
       throw new Error('A new session is not available right now.');
     }
 
+    const config = this.storage.getConfig();
     const now = new Date();
+    const baseDurationSeconds = availability.launchBudgetSeconds;
+    const totalDurationSeconds = baseDurationSeconds + config.graceSeconds;
     const session: ActiveSession = {
       id: randomUUID(),
       startedAt: now.toISOString(),
-      plannedEndAt: new Date(now.getTime() + availability.launchBudgetSeconds * 1000).toISOString(),
-      remainingSeconds: availability.launchBudgetSeconds,
-      baseDurationSeconds: availability.launchBudgetSeconds,
-      graceSecondsGranted: 0,
+      plannedEndAt: new Date(now.getTime() + totalDurationSeconds * 1000).toISOString(),
+      remainingSeconds: totalDurationSeconds,
+      baseDurationSeconds,
+      graceSecondsGranted: config.graceSeconds,
       status: 'running'
     };
 
@@ -136,47 +133,6 @@ export class SessionService extends EventEmitter {
     });
 
     this.startTicker();
-    this.emitChanged();
-  }
-
-  async requestGraceExtension(): Promise<void> {
-    await this.normalizeUsageWindow();
-
-    const state = this.storage.getState();
-    const session = state.activeSession;
-    if (!session) {
-      throw new Error('No active session.');
-    }
-    if (session.graceSecondsGranted > 0) {
-      throw new Error('This session already used its extra 5 minutes.');
-    }
-    if (session.remainingSeconds > 60) {
-      throw new Error('Extra time is only available during the last minute.');
-    }
-
-    const usage = this.storage.getUsage();
-    if (usage.graceExtensionsUsed >= WEEKLY_GRACE_EXTENSION_LIMIT) {
-      throw new Error('This week has already used all 3 extra-time requests.');
-    }
-
-    const nextSession: ActiveSession = {
-      ...session,
-      plannedEndAt: new Date(new Date(session.plannedEndAt).getTime() + GRACE_EXTENSION_SECONDS * 1000).toISOString(),
-      remainingSeconds: session.remainingSeconds + GRACE_EXTENSION_SECONDS,
-      graceSecondsGranted: GRACE_EXTENSION_SECONDS
-    };
-
-    const nextUsage: UsageLedger = {
-      ...usage,
-      graceExtensionsUsed: usage.graceExtensionsUsed + 1,
-      graceSecondsGranted: usage.graceSecondsGranted + GRACE_EXTENSION_SECONDS
-    };
-
-    await this.storage.saveState({
-      ...state,
-      activeSession: nextSession
-    });
-    await this.storage.saveUsage(nextUsage);
     this.emitChanged();
   }
 
@@ -260,7 +216,7 @@ export class SessionService extends EventEmitter {
     const countedQuotaSeconds = clamp(
       Math.min(totalPlayedSeconds, session.baseDurationSeconds),
       1,
-      session.baseDurationSeconds
+      Math.max(1, session.baseDurationSeconds)
     );
 
     const record: UsageRecord = {
@@ -275,6 +231,7 @@ export class SessionService extends EventEmitter {
     const nextUsage: UsageLedger = {
       ...usage,
       usedSeconds: clamp(usage.usedSeconds + countedQuotaSeconds, 0, config.weeklyQuotaSeconds),
+      graceSecondsGranted: usage.graceSecondsGranted + session.graceSecondsGranted,
       sessions: [record, ...usage.sessions].slice(0, 32)
     };
     const nextState: PersistedState = {

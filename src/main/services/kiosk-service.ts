@@ -1,7 +1,8 @@
 import { BrowserWindow, globalShortcut } from 'electron';
 
-const BLOCKED_SHORTCUTS = [
-  'Alt+F4',
+const ALWAYS_BLOCKED_SHORTCUTS = ['Alt+F4'];
+
+const LOCKED_ONLY_SHORTCUTS = [
   'CommandOrControl+W',
   'CommandOrControl+Q',
   'Alt+Tab',
@@ -16,6 +17,7 @@ export class KioskService {
   bindWindow(window: BrowserWindow): void {
     this.boundWindow = window;
     window.setMenuBarVisibility(false);
+    this.registerAlwaysBlockedShortcuts();
     this.lockWindow();
 
     window.on('blur', () => {
@@ -46,6 +48,7 @@ export class KioskService {
     if (this.locked) {
       window.setAlwaysOnTop(true, 'screen-saver');
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      this.registerLockedShortcuts();
       return;
     }
 
@@ -55,7 +58,7 @@ export class KioskService {
     window.setKiosk(true);
     window.show();
     window.focus();
-    this.registerShortcuts();
+    this.registerLockedShortcuts();
   }
 
   releaseForSession(): void {
@@ -69,7 +72,7 @@ export class KioskService {
     }
 
     this.locked = false;
-    this.unregisterShortcuts();
+    this.unregisterLockedShortcuts();
     window.setKiosk(false);
     window.setAlwaysOnTop(false);
     window.setVisibleOnAllWorkspaces(false);
@@ -77,18 +80,35 @@ export class KioskService {
   }
 
   dispose(): void {
-    this.unregisterShortcuts();
+    this.unregisterAlwaysBlockedShortcuts();
+    this.unregisterLockedShortcuts();
   }
 
-  private registerShortcuts(): void {
-    for (const shortcut of BLOCKED_SHORTCUTS) {
+  private registerAlwaysBlockedShortcuts(): void {
+    for (const shortcut of ALWAYS_BLOCKED_SHORTCUTS) {
       if (!globalShortcut.isRegistered(shortcut)) {
         globalShortcut.register(shortcut, () => undefined);
       }
     }
   }
 
-  private unregisterShortcuts(): void {
-    globalShortcut.unregisterAll();
+  private unregisterAlwaysBlockedShortcuts(): void {
+    for (const shortcut of ALWAYS_BLOCKED_SHORTCUTS) {
+      globalShortcut.unregister(shortcut);
+    }
+  }
+
+  private registerLockedShortcuts(): void {
+    for (const shortcut of LOCKED_ONLY_SHORTCUTS) {
+      if (!globalShortcut.isRegistered(shortcut)) {
+        globalShortcut.register(shortcut, () => undefined);
+      }
+    }
+  }
+
+  private unregisterLockedShortcuts(): void {
+    for (const shortcut of LOCKED_ONLY_SHORTCUTS) {
+      globalShortcut.unregister(shortcut);
+    }
   }
 }
